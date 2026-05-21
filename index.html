@@ -1,0 +1,332 @@
+<!--
+  Copyright (c) 2026 Alan Miller
+  Released under the MIT License
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Relationshapez: Sierpinski Triangle</title>
+<style>
+:root{
+  --gw-blue:#033C5A;
+  --gw-buff:#D6BF91;
+  --gw-buff-dark:#9C7A3E;
+  --gw-light:#7FBAE3;
+  --bg:#F7F5F0;
+  --panel:#FFFFFF;
+  --line:#D7DDE4;
+  --text:#1F2937;
+  --muted:#6B7280;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;overscroll-behavior:none}
+body{padding:10px}
+.app{max-width:760px;margin:0 auto;display:grid;gap:10px}
+.panel{background:var(--panel);border-radius:18px;padding:12px;box-shadow:0 4px 18px rgba(0,0,0,.08)}
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.btn-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.btn{border:0;background:var(--gw-blue);color:#fff;padding:10px 14px;border-radius:12px;font-weight:800;cursor:pointer;min-height:42px;touch-action:manipulation;line-height:1}
+.btn.secondary{background:var(--gw-buff);color:var(--gw-blue)}
+.btn.arrow{font-size:1.15rem;min-width:46px;padding:10px 12px}
+.btn:active:not(:disabled){transform:scale(.98)}
+.btn:disabled{opacity:.42;cursor:not-allowed;transform:none}
+.iterations{font-weight:800;color:var(--gw-blue);margin-left:auto;white-space:nowrap}
+.controls{display:grid;grid-template-columns:1fr;gap:10px}
+.field-grid{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px 10px;align-items:center}
+label{font-weight:800;color:var(--gw-blue)}
+input[type="number"]{width:100%;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:12px;font:inherit;font-weight:700;background:#fff;color:var(--text)}
+input[type="number"]:focus{outline:none;border-color:var(--gw-blue);box-shadow:0 0 0 3px rgba(3,60,90,.10)}
+input[type="range"]{width:100%;accent-color:var(--gw-blue);min-height:34px}
+.canvas-wrap{position:relative;touch-action:none;border:1px solid var(--line);border-radius:18px;overflow:hidden;background:radial-gradient(circle at 20% 20%, rgba(214,191,145,.22), transparent 34%), linear-gradient(180deg, #ffffff 0%, #fbfaf6 100%)}
+canvas{display:block;width:100%;height:min(68vh,590px);min-height:380px;touch-action:none}
+.zoom-note{position:absolute;right:10px;bottom:10px;background:rgba(255,255,255,.88);border:1px solid rgba(3,60,90,.12);border-radius:999px;padding:6px 10px;color:var(--muted);font-size:.75rem;font-weight:700;pointer-events:none;opacity:0;transition:opacity .2s ease}
+.zoom-note.show{opacity:1}
+@media (min-width:700px){.controls{grid-template-columns:1fr 1fr}}
+@media (max-width:430px){body{padding:8px}.panel{padding:10px;border-radius:16px}.btn{padding:10px 12px}.topbar{align-items:flex-start}.iterations{width:100%;margin-left:0}.field-grid{grid-template-columns:54px minmax(0,1fr)}canvas{height:62vh;min-height:330px}.btn.arrow{min-width:44px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="panel topbar">
+    <div class="btn-row">
+      <button id="animateBtn" class="btn" type="button">Animate</button>
+      <button id="resetBtn" class="btn secondary" type="button">Reset</button>
+      <button id="backBtn" class="btn secondary arrow" type="button" aria-label="Previous iteration">◀</button>
+      <button id="forwardBtn" class="btn secondary arrow" type="button" aria-label="Next iteration">▶</button>
+    </div>
+    <div id="iterationCount" class="iterations">0 iterations</div>
+  </div>
+
+  <div class="panel controls" aria-label="Controls">
+    <div class="field-grid">
+      <label for="maxInput">Max</label>
+      <input id="maxInput" type="number" min="1" max="12" step="1" value="6" inputmode="numeric" />
+    </div>
+    <div class="field-grid">
+      <label for="speedSlider">Speed</label>
+      <input id="speedSlider" type="range" min="1" max="100" value="45" />
+    </div>
+  </div>
+
+  <div class="panel">
+    <div id="canvasWrap" class="canvas-wrap" aria-label="Sierpinski triangle drawing canvas">
+      <canvas id="canvas"></canvas>
+      <div id="zoomNote" class="zoom-note">zoomed view</div>
+    </div>
+  </div>
+</div>
+<script>
+(()=>{
+'use strict';
+const GW_BLUE = '#033C5A';
+const GW_BUFF = '#D6BF91';
+const GW_BUFF_DARK = '#9C7A3E';
+const BG = '#FFFCF6';
+
+const canvas = document.getElementById('canvas');
+const wrap = document.getElementById('canvasWrap');
+const ctx = canvas.getContext('2d', { alpha:false });
+const animateBtn = document.getElementById('animateBtn');
+const resetBtn = document.getElementById('resetBtn');
+const backBtn = document.getElementById('backBtn');
+const forwardBtn = document.getElementById('forwardBtn');
+const maxInput = document.getElementById('maxInput');
+const speedSlider = document.getElementById('speedSlider');
+const iterationCount = document.getElementById('iterationCount');
+const zoomNote = document.getElementById('zoomNote');
+
+let cssW=0, cssH=0, dpr=1;
+let running=false, raf=0, lastTick=0;
+let currentIteration=0;
+let transition=null;
+let view={scale:1, tx:0, ty:0};
+let pointerState={dragging:false,lastX:0,lastY:0,pointers:new Map(),pinchDist:0,pinchScale:1,pinchCenter:null};
+
+const baseTriangle = [
+  {x:0, y:-0.94},
+  {x:-0.98, y:0.76},
+  {x:0.98, y:0.76}
+];
+
+function clamp(v,lo,hi){return Math.max(lo,Math.min(hi,v));}
+function getMax(){return clamp(Math.round(Number(maxInput.value)||6),1,12);}
+function isSlow(){return Number(speedSlider.value)<=1;}
+function mid(a,b){return {x:(a.x+b.x)/2, y:(a.y+b.y)/2};}
+function subTriangles(t){
+  const [a,b,c]=t, ab=mid(a,b), bc=mid(b,c), ca=mid(c,a);
+  return [[a,ab,ca],[ab,b,bc],[ca,bc,c]];
+}
+function middleTriangle(t){
+  const [a,b,c]=t;
+  return [mid(a,b), mid(b,c), mid(c,a)];
+}
+function setIterationText(){
+  const n=currentIteration;
+  iterationCount.textContent=n.toLocaleString()+` iteration${n===1?'':'s'}`;
+}
+function updateButtons(){
+  const max=getMax();
+  animateBtn.textContent=running?'Pause':'Animate';
+  backBtn.disabled=running || currentIteration<=0;
+  forwardBtn.disabled=running || currentIteration>=max;
+  maxInput.value=max;
+}
+function baseScale(){return Math.min(cssW,cssH)*0.50;}
+function worldToScreen(p){
+  const s=baseScale()*view.scale;
+  return {x:cssW/2+view.tx+p.x*s, y:cssH/2+view.ty+p.y*s};
+}
+function screenToWorld(x,y){
+  const s=baseScale()*view.scale;
+  return {x:(x-cssW/2-view.tx)/s, y:(y-cssH/2-view.ty)/s};
+}
+function clear(){ctx.fillStyle=BG;ctx.fillRect(0,0,cssW,cssH);}
+function trianglePath(t){
+  const p=t.map(worldToScreen);
+  ctx.beginPath();ctx.moveTo(p[0].x,p[0].y);ctx.lineTo(p[1].x,p[1].y);ctx.lineTo(p[2].x,p[2].y);ctx.closePath();
+}
+function fillTriangle(t, color){trianglePath(t);ctx.fillStyle=color;ctx.fill();}
+function strokeTriangle(t, color, width){trianglePath(t);ctx.strokeStyle=color;ctx.lineWidth=width;ctx.stroke();}
+function drawRemaining(t, depth){
+  if(depth<=0){fillTriangle(t,GW_BLUE);return;}
+  const parts=subTriangles(t);
+  drawRemaining(parts[0],depth-1);
+  drawRemaining(parts[1],depth-1);
+  drawRemaining(parts[2],depth-1);
+}
+function drawSoftOutline(){
+  ctx.save();
+  strokeTriangle(baseTriangle,'rgba(3,60,90,.18)',2);
+  ctx.restore();
+}
+function collectMiddleTriangles(t, depth, out){
+  if(depth<=0){out.push(middleTriangle(t));return;}
+  for(const s of subTriangles(t)) collectMiddleTriangles(s,depth-1,out);
+}
+function drawRemovingOverlay(fromIteration, progress){
+  const holes=[];
+  collectMiddleTriangles(baseTriangle,fromIteration,holes);
+  const fillAlpha=clamp(progress,0,1);
+  const strokeAlpha=clamp(1-progress*.45,0,1);
+  ctx.save();
+  for(const h of holes){
+    trianglePath(h);
+    ctx.fillStyle=`rgba(255,252,246,${fillAlpha})`;
+    ctx.fill();
+    ctx.strokeStyle=`rgba(156,122,62,${strokeAlpha})`;
+    ctx.lineWidth=Math.max(2, 3.5*view.scale/(view.scale+.75));
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+function render(){
+  clear();
+  drawRemaining(baseTriangle,currentIteration);
+  if(transition) drawRemovingOverlay(transition.from, transition.progress);
+  drawSoftOutline();
+}
+function resizeCanvas(){
+  const rect=canvas.getBoundingClientRect();
+  dpr=Math.max(1,Math.min(3,window.devicePixelRatio||1));
+  cssW=Math.max(280,rect.width); cssH=Math.max(280,rect.height);
+  canvas.width=Math.round(cssW*dpr); canvas.height=Math.round(cssH*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  render();
+}
+function resetView(){view={scale:1,tx:0,ty:0};zoomNote.classList.remove('show');}
+function pauseAnimation(){
+  running=false; cancelAnimationFrame(raf); transition=null; lastTick=0;
+  updateButtons(); render();
+}
+function animationDelay(){
+  const s=Number(speedSlider.value);
+  return Math.round(1100 - (s/100)*1010);
+}
+function stepForward(){
+  const max=getMax();
+  if(currentIteration<max){currentIteration++; setIterationText(); updateButtons(); render();}
+}
+function stepBack(){
+  if(currentIteration>0){currentIteration--; setIterationText(); updateButtons(); render();}
+}
+function animateLoop(timestamp){
+  if(!running)return;
+  const max=getMax();
+  if(currentIteration>=max){pauseAnimation();return;}
+  if(isSlow()){
+    if(!transition) transition={from:currentIteration,start:timestamp,progress:0};
+    transition.progress=clamp((timestamp-transition.start)/1050,0,1);
+    render();
+    if(transition.progress>=1){
+      currentIteration++;
+      setIterationText();
+      transition=null;
+      render();
+    }
+  }else{
+    if(!lastTick) lastTick=timestamp;
+    if(timestamp-lastTick>=animationDelay()){
+      currentIteration++;
+      setIterationText();
+      lastTick=timestamp;
+      render();
+    }
+  }
+  updateButtons();
+  raf=requestAnimationFrame(animateLoop);
+}
+function beginAnimation(){
+  const max=getMax();
+  if(currentIteration>=max) currentIteration=0;
+  running=true; transition=null; lastTick=0;
+  setIterationText(); updateButtons(); render();
+  raf=requestAnimationFrame(animateLoop);
+}
+function toggleAnimation(){running?pauseAnimation():beginAnimation();}
+function fullReset(){
+  running=false; cancelAnimationFrame(raf); transition=null; lastTick=0;
+  currentIteration=0; resetView(); setIterationText(); updateButtons(); render();
+}
+function zoomAt(screenX,screenY,factor){
+  const before=screenToWorld(screenX,screenY);
+  view.scale=clamp(view.scale*factor,.7,80);
+  const afterScreen=worldToScreen(before);
+  view.tx += screenX-afterScreen.x;
+  view.ty += screenY-afterScreen.y;
+  zoomNote.classList.add('show');
+  render();
+}
+function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
+function centerOfPointers(){
+  const arr=[...pointerState.pointers.values()];
+  return {x:(arr[0].x+arr[1].x)/2,y:(arr[0].y+arr[1].y)/2};
+}
+wrap.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const rect=canvas.getBoundingClientRect();
+  zoomAt(e.clientX-rect.left,e.clientY-rect.top,Math.exp(-e.deltaY*0.0012));
+},{passive:false});
+wrap.addEventListener('pointerdown',e=>{
+  wrap.setPointerCapture(e.pointerId);
+  const rect=canvas.getBoundingClientRect();
+  const p={x:e.clientX-rect.left,y:e.clientY-rect.top};
+  pointerState.pointers.set(e.pointerId,p);
+  if(pointerState.pointers.size===1){pointerState.dragging=true;pointerState.lastX=p.x;pointerState.lastY=p.y;}
+  if(pointerState.pointers.size===2){
+    const arr=[...pointerState.pointers.values()];
+    pointerState.pinchDist=dist(arr[0],arr[1]); pointerState.pinchScale=view.scale; pointerState.pinchCenter=centerOfPointers();
+  }
+});
+wrap.addEventListener('pointermove',e=>{
+  if(!pointerState.pointers.has(e.pointerId))return;
+  const rect=canvas.getBoundingClientRect();
+  const p={x:e.clientX-rect.left,y:e.clientY-rect.top};
+  pointerState.pointers.set(e.pointerId,p);
+  if(pointerState.pointers.size===2){
+    const arr=[...pointerState.pointers.values()];
+    const c=centerOfPointers();
+    const factor=dist(arr[0],arr[1])/(pointerState.pinchDist||1);
+    view.scale=clamp(pointerState.pinchScale*factor,.7,80);
+    view.tx += c.x-(pointerState.pinchCenter?.x ?? c.x);
+    view.ty += c.y-(pointerState.pinchCenter?.y ?? c.y);
+    pointerState.pinchCenter=c;
+    zoomNote.classList.add('show');
+    render();
+  }else if(pointerState.dragging){
+    view.tx += p.x-pointerState.lastX; view.ty += p.y-pointerState.lastY;
+    pointerState.lastX=p.x; pointerState.lastY=p.y;
+    zoomNote.classList.add('show');
+    render();
+  }
+});
+function endPointer(e){
+  pointerState.pointers.delete(e.pointerId);
+  pointerState.dragging=false;
+  if(pointerState.pointers.size===1){
+    const p=[...pointerState.pointers.values()][0];
+    pointerState.dragging=true; pointerState.lastX=p.x; pointerState.lastY=p.y;
+  }
+}
+wrap.addEventListener('pointerup',endPointer); wrap.addEventListener('pointercancel',endPointer);
+
+animateBtn.addEventListener('click',toggleAnimation);
+resetBtn.addEventListener('click',fullReset);
+forwardBtn.addEventListener('click',()=>{if(!running)stepForward();});
+backBtn.addEventListener('click',()=>{if(!running)stepBack();});
+maxInput.addEventListener('change',()=>{
+  const max=getMax();
+  if(currentIteration>max) currentIteration=max;
+  setIterationText(); updateButtons(); render();
+});
+speedSlider.addEventListener('input',()=>{
+  if(running){transition=null; lastTick=0;}
+});
+let resizeTimer=0;
+window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(resizeCanvas,80);});
+setIterationText(); updateButtons(); resizeCanvas();
+})();
+</script>
+</body>
+</html>
