@@ -2,7 +2,7 @@
 
 This project is a single-file, mobile-friendly HTML exploration of the Sierpinski triangle. It is designed for classroom demonstrations, student exploration, and quick use on phones, tablets, or computers.
 
-<https://relationshapez.github.io/sierpinskifractal/>
+<https://relationshapez.github.io/sierpinski_fractal/>
 
 ## Files
 
